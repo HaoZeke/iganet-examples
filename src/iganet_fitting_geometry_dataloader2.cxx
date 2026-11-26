@@ -129,17 +129,12 @@ public:
 
 int main() {
 
-#ifdef IGANET_WITH_MPI
-  // Creating MPI Process Group
-  auto pg = c10d::ProcessGroupMPI::createProcessGroupMPI();
-
-  // Retrieving MPI environment variables
-  auto size = pg->getSize();
-  auto rank = pg->getRank();
-#endif
-
   iganet::init();
   iganet::verbose(std::cout);
+
+  // Number of MPI processes and rank of this process (1 and 0 without MPI)
+  const int size = iganet::mpi::size();
+  const int rank = iganet::mpi::rank();
 
   nlohmann::json json;
   json["res0"] = 50;
@@ -176,7 +171,7 @@ int main() {
       train_size, size, rank, false);
 
   auto train_loader = torch::data::make_data_loader(
-      std::move(train_dataset),
+      std::move(train_dataset), data_sampler,
       iganet::utils::getenv("IGANET_BATCHSIZE", 8) / size);
 
 #else
@@ -202,11 +197,7 @@ int main() {
         for (int64_t nneurons :
              iganet::utils::getenv("IGANET_NNEURONS", {10})) {
 
-#ifdef IGANET_WITH_MPI
-          if (pg->getRank() == 0)
-#endif
-
-            std::vector<int64_t> layers(nlayers, nneurons);
+          std::vector<int64_t> layers(nlayers, nneurons);
           std::vector<std::vector<std::any>> activations(nlayers, activation);
           activations.emplace_back(
               std::vector<std::any>{iganet::activation::none});
@@ -242,17 +233,13 @@ int main() {
           auto t1 = std::chrono::high_resolution_clock::now();
 
           // Train network
-#ifdef IGANET_WITH_MPI
-          net.train(*train_loader, pg);
-#else
           net.train(*train_loader);
-#endif
 
           // Stop time measurement
           auto t2 = std::chrono::high_resolution_clock::now();
 
 #ifdef IGANET_WITH_MPI
-          if (pg->getRank() == 0)
+          if (rank == 0)
 #endif
             iganet::Log(iganet::log::info)
                 << "Training took "
@@ -306,7 +293,7 @@ int main() {
                                  false);
 
 #ifdef IGANET_WITH_MPI
-          if (pg->getRank() == 0)
+          if (rank == 0)
 #endif
             iganet::Log(iganet::log::info)
                 << "L2-error : "
@@ -314,7 +301,7 @@ int main() {
                 << std::endl;
 
 #ifdef IGANET_WITH_MPI
-          if (pg->getRank() == 0)
+          if (rank == 0)
 #endif
             iganet::Log(iganet::log::info)
                 << "H1-error : "
